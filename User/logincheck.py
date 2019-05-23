@@ -33,6 +33,8 @@ class Ui_MainWindow(object):
         self.label_5.setObjectName("label_5")
         self.horizontalLayout.addWidget(self.label_5)
         self.lineEdit = QtWidgets.QLineEdit(self.frame_2)
+        self.lineEdit.setInputMethodHints(QtCore.Qt.ImhLatinOnly)
+        self.lineEdit.setEchoMode(QtWidgets.QLineEdit.Normal)
         self.lineEdit.setObjectName("lineEdit")
         self.horizontalLayout.addWidget(self.lineEdit)
         self.horizontalLayout.setStretch(0, 1)

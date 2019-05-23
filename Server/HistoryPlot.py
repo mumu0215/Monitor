@@ -19,11 +19,14 @@ class widgetView(QWidget,Ui_Form):
         self.horizontalLayout.addWidget(self.canvas)
 
     def plotHistory(self,dataIn):
-        xlab=[i[0] for i in dataIn[:10]]
-        y=[i[1] for i in dataIn[:10]]
+        xlab=[i[0] for i in dataIn[0]]
+        y=[i[1] for i in dataIn[0]]
         # print(xlab,y)
         arr_x=np.arange(len(xlab))
         arr_y=np.array(y)
+        self.figure.tight_layout()
+        plt.subplots_adjust(hspace=0.2,wspace=0)
+        plt.subplot(2,1,1)
         plt.ylabel('访问次数')
         plt.bar(range(len(xlab)),y,tick_label=xlab,color='blue',width=0.5)
         ax=plt.gca()
@@ -32,5 +35,17 @@ class widgetView(QWidget,Ui_Form):
         for a,b in zip(arr_x,arr_y):
             plt.text(a,b,'%d'%b,ha='center',va='bottom')
         plt.title('History View')
+        plt.subplot(2,2,3)
+        plt.title('中文搜索词云')
+        wordcloud_cn = WordCloud(font_path="C:\\Windows\\Fonts\\STFANGSO.ttf", background_color="white", max_font_size=80)
+        wordcloud_cn=wordcloud_cn.fit_words(dict(dataIn[1]))
+        plt.imshow(wordcloud_cn)
+        plt.axis('off')
+        plt.subplot(2,2,4)
+        plt.title('英文搜索词云')
+        wordcloud_en=WordCloud( background_color="white", max_font_size=80)
+        wordcloud_en=wordcloud_en.fit_words(dict(dataIn[2]))
+        plt.imshow(wordcloud_en)
+        plt.axis('off')
         self.canvas.draw()
 

