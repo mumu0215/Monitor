@@ -17,10 +17,10 @@
    <widget class="QFrame" name="frame_3">
     <property name="geometry">
      <rect>
-      <x>160</x>
+      <x>150</x>
       <y>50</y>
-      <width>311</width>
-      <height>135</height>
+      <width>321</width>
+      <height>151</height>
      </rect>
     </property>
     <property name="frameShape">
@@ -36,6 +36,28 @@
      <property name="bottomMargin">
       <number>1</number>
      </property>
+     <item>
+      <widget class="QFrame" name="frame">
+       <property name="frameShape">
+        <enum>QFrame::StyledPanel</enum>
+       </property>
+       <property name="frameShadow">
+        <enum>QFrame::Raised</enum>
+       </property>
+       <layout class="QHBoxLayout" name="horizontalLayout_3">
+        <item>
+         <widget class="QLabel" name="label">
+          <property name="text">
+           <string>ServerIP:  </string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="lineEdit_3"/>
+        </item>
+       </layout>
+      </widget>
+     </item>
      <item>
       <widget class="QFrame" name="frame_2">
        <property name="frameShape">

@@ -11,6 +11,8 @@ class communicateS(QtCore.QThread):
     def __init__(self, parent=None):
         super(communicateS, self).__init__(parent)
         self.info=''
+        # self.ip=''
+        self.ip=self.get_host_ip()
         self.addr_list=[]
         self.serverSocket=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
 
@@ -19,10 +21,25 @@ class communicateS(QtCore.QThread):
         self.serverSocket.close()
         self.terminate()
         self.wait()
+
+    def get_host_ip(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        return ip
+
+    def printIP(self):
+        if self.ip!='':
+            return self.ip
+        else:return False
+
     def run(self):
-        self.serverSocket.bind(('192.168.0.107',9999))
+        self.ip=self.get_host_ip()
+        self.serverSocket.bind((self.ip,9999))
         self.serverSocket.listen(5)
-        print('Waiting...')
         while True:
             sock,addr=self.serverSocket.accept()
             self.addr_list.append([sock,addr])
@@ -56,7 +73,7 @@ class communicateS(QtCore.QThread):
     def stop_cap(self,dest):
         for i in self.addr_list:
             if dest==i[1][0]:
-                msg = [{'code': 99}]
+                msg = [{'code': 55}]
                 msg_json = json.dumps(msg)
                 i[0].send(msg_json.encode())
 
@@ -78,6 +95,7 @@ class communicateS(QtCore.QThread):
                 self.signal2.emit([msg[0]['host'],addr[0],msg[0]['IO'],msg[0]['time']])
                 with open('record.log','a') as f:
                     f.write('   '+date_info+' '+msg[0]['time']+'    '+msg[0]['host']+'  quit\n')
+                break
             elif msg[0]['code']==100:
                 self.signal3.emit(msg[0]['id'])
                 time.sleep(1)
@@ -99,4 +117,5 @@ class communicateS(QtCore.QThread):
                 self.signal6.emit([msg[0]['history'],msg[0]['cnkey'],msg[0]['enkey']])
             else:
                 print('err code!')
+        sock.close()
 

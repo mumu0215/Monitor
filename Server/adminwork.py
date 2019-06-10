@@ -1,20 +1,25 @@
 # _*_ coding=utf-8 _*_
 from admin import Ui_MainWindow
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton,QHBoxLayout,QDialog, QMessageBox,QLineEdit,QTableWidgetItem,QHeaderView
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton,QHBoxLayout, QMessageBox,QLineEdit,QTableWidgetItem,QHeaderView
+from PyQt5.QtGui import QPalette
 from PyQt5 import QtCore
 from scapy.all import *
 from communicate import communicateS
 from net import monitorNet
-import sys,mysql.connector
+import sys,mysql.connector,time
 import pyqtgraph as pg
 
 class threadwork(QtCore.QThread):
     signal=QtCore.pyqtSignal(list)
-    def __init__(self,addr,port, parent=None):
+    signal1=QtCore.pyqtSignal(list)
+    def __init__(self,hostIP,addr,port, parent=None):
         super(threadwork, self).__init__(parent)
+        self.hostIP=hostIP
         self.addr=addr
         self.port=port
+        self.count=[0,0,0] #tcp,udp,all
+        self.timeclock=None
 
     def run(self):
         port_str = ''
@@ -24,18 +29,32 @@ class threadwork(QtCore.QThread):
         else:
             pass
         port_str = '(' + port_str.rstrip('or ') + ')' if len(port_str) > 0 else ''
-        if self.addr == 'None':
-            filter_str = 'src net 192.168.0'
+        if self.addr == 'None' and self.hostIP!=False:
+            netaddr=self.hostIP.split('.')
+            filter_str = 'src net %s.%s.%s'%(netaddr[0],netaddr[1],netaddr[2])
         else:
             filter_str = 'src host ' + self.addr.split(':')[1]
         all_str = filter_str + ' and ' + port_str if len(port_str) > 0 else filter_str
+        self.timeclock=time.time()
         while True:
-            dpkt = sniff(filter=all_str, count=1)
-            if dpkt[0].haslayer('TCP') or dpkt[0].haslayer('UDP'):
+            if int(time.time()-self.timeclock)>10:
+                self.signal1.emit(self.count)
+                self.timeclock=time.time()
+                self.count=[0,0,0]
+            packet = sniff(filter=all_str, count=1)
+            self.count[2]+=1
+            if packet[0].haslayer('TCP') or packet[0].haslayer('UDP'):
+                if packet[0].haslayer('TCP'):
+                    proto='TCP'
+                    self.count[0]+=1
+                else:
+                    proto='UDP'
+                    self.count[1]+=1
                 out_list = []
-                out_list.append(str(dpkt[0][IP].src) + ':' + str(dpkt[0][IP].payload.sport))
-                out_list.append(str(dpkt[0][IP].dst) + ':' + str(dpkt[0][IP].payload.dport))
+                out_list.append(str(packet[0][IP].src) + ':' + str(packet[0][IP].payload.sport))
+                out_list.append(str(packet[0][IP].dst) + ':' + str(packet[0][IP].payload.dport))
                 out_list.append(QtCore.QTime.currentTime().toString(QtCore.Qt.DefaultLocaleLongDate))
+                out_list.append(proto)
                 self.signal.emit(out_list)
                 del out_list
 
@@ -50,11 +69,16 @@ class MyAdmin(QMainWindow,Ui_MainWindow):
         super(MyAdmin, self).__init__()
         self.setupUi(self)
         #self.tableWidget.resizeColumnsToContents()
+        p=QPalette()
+        p.setColor(QPalette.WindowText, QtCore.Qt.red)  # 设置字体颜色
+        self.label_5.setAlignment(QtCore.Qt.AlignCenter)
+        self.label_5.setPalette(p)
         self.tableWidget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tableWidget.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeToContents)
         self.tableWidget_2.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tableWidget_3.horizontalHeader().setSectionResizeMode(3,QHeaderView.ResizeToContents)
         self.tableWidget_3.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.setWindowTitle('Monitor')
 
         # Mysql
         self.sql_conn = mysql.connector.connect(user='root', password='linyu17476', database='test')
@@ -100,6 +124,7 @@ class MyAdmin(QMainWindow,Ui_MainWindow):
         self.signal.connect(self.connect_sock.set_info)
         self.signal2.connect(self.connect_sock.check_cap)
         self.connect_sock.start()
+        self.hostIP=self.connect_sock.printIP()
 
     def __del__(self):
         del self.xlabel,self.usery1label,self.usery2label,self.y1label,self.y2label,self.userxlabel,self.hisView,self.newWidget
@@ -219,17 +244,23 @@ class MyAdmin(QMainWindow,Ui_MainWindow):
         widget.setLayout(hlayout)
         return widget
 
+    def getRate(self,onein):
+        tcprate=round(float(onein[0]/onein[2]),4)
+        udprate=round(float(onein[1]/onein[2]),4)
+        self.label_5.setText('tcp:{:.2%}  udp:{:.2%}   total:{}'.format(tcprate,udprate,onein[2]))
+
     def startcap(self):
         _translate = QtCore.QCoreApplication.translate
         if self.pushButton.isChecked()==True:
             self.pushButton.setText(_translate("MainWindow", "stop"))
             port_list=self.lineEdit_2.text().split(',') if self.lineEdit_2.text()!='' else []
-            self.thread = threadwork(self.comboBox.currentText(),port_list)
+            self.thread = threadwork(self.hostIP,self.comboBox.currentText(),port_list)
             self.label_3.setText(self.comboBox.currentText())
             dest=self.label_3.text().split(':')[1] if self.label_3.text()!='None' else 'None'
             if dest!='None':
                 self.signal2.emit(dest)
             self.thread.signal.connect(self.get_update)
+            self.thread.signal1.connect(self.getRate)
             self.thread.start()
         else:
             dest1 = self.label_3.text().split(':')[1] if self.label_3.text() != 'None' else 'None'
@@ -249,12 +280,12 @@ class MyAdmin(QMainWindow,Ui_MainWindow):
         self.tableWidget_2.setRowCount(num_prerow+1)
         self.tableWidget_2.setItem(num_prerow,0,QTableWidgetItem(one_info[0]))
         self.tableWidget_2.setItem(num_prerow, 1, QTableWidgetItem(one_info[1]))
-        self.tableWidget_2.setItem(num_prerow, 4,QTableWidgetItem(one_info[2]))
+        self.tableWidget_2.setItem(num_prerow,2,QTableWidgetItem(one_info[3]))
+        self.tableWidget_2.setItem(num_prerow, 3,QTableWidgetItem(one_info[2]))
 
     def getkeyboard(self):
         if self.comboBox_2.currentText()!='':
             dest = self.comboBox_2.currentText().split(':')[1]
-            print(dest)
             self.connect_sock.requestKey(dest)
 
     def keyinView(self,alltext):
