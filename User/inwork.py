@@ -31,8 +31,7 @@ class MyLogin(QMainWindow,Ui_MainWindow):
 
     def __del__(self):
         del self.stopen,self.stopcn
-        if self.history_conn:
-            self.history_conn.close()
+        self.history_conn.close()
         self.thread_in.terminate()
         self.thread_in.wait()
         self.userSocket.close()

@@ -9,6 +9,8 @@ from communicate import communicateS
 from net import monitorNet
 import sys,mysql.connector,time
 import pyqtgraph as pg
+from functools import reduce
+from sklearn import svm
 
 class threadwork(QtCore.QThread):
     signal=QtCore.pyqtSignal(list)
@@ -37,7 +39,7 @@ class threadwork(QtCore.QThread):
         all_str = filter_str + ' and ' + port_str if len(port_str) > 0 else filter_str
         self.timeclock=time.time()
         while True:
-            if int(time.time()-self.timeclock)>10:
+            if int(time.time()-self.timeclock)>=1:       #定义滑动窗口一秒一次，周期十秒
                 self.signal1.emit(self.count)
                 self.timeclock=time.time()
                 self.count=[0,0,0]
@@ -71,8 +73,8 @@ class MyAdmin(QMainWindow,Ui_MainWindow):
         #self.tableWidget.resizeColumnsToContents()
         p=QPalette()
         p.setColor(QPalette.WindowText, QtCore.Qt.red)  # 设置字体颜色
-        self.label_5.setAlignment(QtCore.Qt.AlignCenter)
-        self.label_5.setPalette(p)
+        self.label_6.setAlignment(QtCore.Qt.AlignCenter)
+        self.label_6.setPalette(p)
         self.tableWidget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tableWidget.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeToContents)
         self.tableWidget_2.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -113,6 +115,13 @@ class MyAdmin(QMainWindow,Ui_MainWindow):
         self.userxlabel=[]
         self.usery1label = []
         self.usery2label = []
+
+        self.data_bag=[]              #存储数据包比例
+        self.point=[-1,-1]              #记录送去检验的点
+        self.classData=[[],[]]          #记录数据检验窗口
+        self.data_count=[0,0]          #记录数据个数
+        self.data_pre=[]               #滑动的预测点
+        self.pre_count=0
 
         self.connect_sock = communicateS()
         self.connect_sock.signal.connect(self.update_host)
@@ -245,9 +254,85 @@ class MyAdmin(QMainWindow,Ui_MainWindow):
         return widget
 
     def getRate(self,onein):
-        tcprate=round(float(onein[0]/onein[2]),4)
-        udprate=round(float(onein[1]/onein[2]),4)
-        self.label_5.setText('tcp:{:.2%}  udp:{:.2%}   total:{}'.format(tcprate,udprate,onein[2]))
+        if type(onein)==list:
+            if self.data_count[0]<60:
+                self.data_count[0] += 1
+                self.data_bag.append(onein)
+                result=reduce(lambda x,y:[x[0]+y[0],x[1]+y[1],x[2]+y[2]],self.data_bag)
+                # self.classData[0].append(round(float(result[1]/result[2]),4))        #存入udp
+                if result[2]==0:
+                    # self.classData[0].append(-1) #分母为零
+                    self.data_count[0]-=1
+                    self.label_5.setText('tcp:0%  udp:0%   total:0')
+                else:
+                    tcprate=round(float(result[0]/result[2]),4)
+                    udprate=round(float(result[1]/result[2]),4)
+                    self.classData[0].append(udprate)
+                    self.label_5.setText('tcp:{:.2%}  udp:{:.2%}   total:{}'.format(tcprate, udprate, result[2]))
+            elif self.data_count[0]==60:
+                del self.data_bag[0]
+                self.data_bag.append(onein)
+                result = reduce(lambda x, y: [x[0] + y[0], x[1] + y[1], x[2] + y[2]], self.data_bag)
+                self.label_5.setText('tcp:{:.2%}  udp:{:.2%}   total:{}'
+                                     .format(result[0]/result[2],result[1]/result[2], result[2]))
+                self.point[0]=round(float(result[1] / result[2]), 4)
+        else:
+            if self.data_count[1]<60:
+                self.data_count[1]+=1
+                self.classData[1].append(onein)
+            elif self.data_count[1]==60:
+                self.point[1]=onein
+        if self.point[0]!=-1 and self.point[1]!=-1:
+            if self.pre_count<30:
+                self.data_pre.append(self.point)
+                self.pre_count+=1
+            elif self.pre_count==30:
+                self.data_pre.append(self.point)
+                del self.data_pre[0]
+            # print(self.data_pre)
+            classfiyer=self.oneclass(self.data_pre)
+            score=0
+            for i in range(classfiyer.shape[0]):
+                if classfiyer[i] == -1:
+                    if self.data_pre[i][0] < 0.2:
+                        score+=0.9
+                        # self.label_6.setText('Suspected')
+                        if type(onein) == list:
+                            self.classData[0].append(self.point[0])
+                            del self.classData[0][0]
+                        else:
+                            del self.classData[1][0]
+                            self.classData[1].append(onein)
+                    else:
+                    	pass
+                        # score-=1
+                        # self.label_6.setText('Negative')
+                elif classfiyer[i] == 1:
+                    score+=1
+                    # self.label_6.setText('Positive')
+                    if type(onein) == list:
+                        self.classData[0].append(self.point[0])
+                        del self.classData[0][0]
+                    else:
+                        del self.classData[1][0]
+                        self.classData[1].append(onein)
+            p=1-round(float(score/classfiyer.shape[0]),4)
+            # print(score,classfiyer.shape[0])                   ##############
+            score=0
+            # if p>1:
+            # 	p=1
+            self.label_6.setText('predict rate: {:.2%}'.format(p))
+            self.point=[-1,-1]
+
+    def oneclass(self,data):
+        import numpy as np
+        self.clf=svm.OneClassSVM(nu=0.1,kernel='rbf',gamma=0.1)
+        datain=np.array(list(zip(self.classData[0],self.classData[1])))
+        self.clf.fit(datain)
+        # print(datain)
+        out=self.clf.predict(np.array(data))
+        # print(out)
+        return out
 
     def startcap(self):
         _translate = QtCore.QCoreApplication.translate
@@ -310,11 +395,12 @@ class MyAdmin(QMainWindow,Ui_MainWindow):
 
 
     def updateusernet(self,one_in):
-        print(one_in)
+        # print(one_in)
+        self.getRate(one_in[1])
         count=len(self.userxlabel)
         self.userxlabel.append(count)
-        self.usery1label.append(one_in[0])
-        self.usery2label.append(one_in[1])
+        self.usery1label.append(one_in[0][0])
+        self.usery2label.append(one_in[0][1])
         self.remoteplt.clear()
         self.remoteplt.setRange(xRange=[(count - 9), (count + 1)])
         if len(self.userxlabel)==2:

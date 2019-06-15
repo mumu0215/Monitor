@@ -66,10 +66,14 @@ class monitorNet(QtCore.QThread):
         self.wait()
     def run(self):
         traffic_net=psutil.net_io_counters()[:2]
+        time.sleep(1)
         while True:
-            time.sleep(1)
+            # time.sleep(1)
             traffic_net_new=psutil.net_io_counters()[:2]
+            link_count = len(
+                [m for m in psutil.net_connections() if m.raddr and m.laddr[0] != '127.0.0.1' and m.laddr[0] != '::1'])
             diff=traffic_net_new[0]-traffic_net[0],traffic_net_new[1]-traffic_net[1]
             traffic_net=traffic_net_new
             diff=list(map(lambda x:x/1024,diff))
-            self.signal.emit(diff)
+            self.signal.emit([diff,link_count])
+            time.sleep(1)
